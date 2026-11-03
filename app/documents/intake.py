@@ -18,6 +18,7 @@ class IntakeResult:
     status: str            # прочитан | ошибка | уже есть
     message: str = ""
     pages: int = 0
+    extract: object = None
 
 
 def read_file(obj: ProjectObject, file_id: int) -> IntakeResult:
@@ -79,5 +80,12 @@ def add_files(obj: ProjectObject, paths: list[Path],
         if not new:
             results.append(IntakeResult(row.name, "уже есть", "этот файл уже добавлен в объект"))
             continue
-        results.append(read_file(obj, row.id))
+        r = read_file(obj, row.id)
+        if r.status == "прочитан":
+            from .extract import extract_file   # шаг 2: текст, OCR, штампы, таблицы
+            ex = extract_file(obj, row.id, cancelled)
+            r.extract = ex
+            if ex.errors:
+                r.message = "; ".join(ex.errors)
+        results.append(r)
     return results

@@ -40,6 +40,15 @@ class TextHit:
     rect: Rect
 
 
+@dataclass(frozen=True)
+class TextRun:
+    """Фрагмент текстового слоя: rect — в координатах PDF, disp — в пунктах отображения
+    (с учётом поворота, начало — левый верхний угол листа)."""
+    text: str
+    rect: Rect
+    disp: tuple[float, float, float, float]
+
+
 class PdfError(Exception):
     """Файл не прочитан. `reason` — понятная пользователю причина на русском."""
 
@@ -55,8 +64,10 @@ class PdfDocument(Protocol):
     def page_text(self, index: int) -> str: ...
     def text_in_rect(self, index: int, rect: Rect) -> str: ...
     def search(self, index: int, needle: str, limit: int = 100) -> list[TextHit]: ...
+    def runs(self, index: int) -> list[TextRun]: ...
     def render(self, index: int, dpi: int) -> Image.Image: ...
     def to_pixels(self, index: int, rects: list[Rect], dpi: int) -> list[tuple[int, int, int, int]]: ...
+    def from_pixels(self, index: int, boxes: list[tuple[int, int, int, int]], dpi: int) -> list[Rect]: ...
     def close(self) -> None: ...
 
 

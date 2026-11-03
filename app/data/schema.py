@@ -50,6 +50,58 @@ OBJECT_MIGRATIONS: dict[int, str] = {
         new TEXT
     );
     """,
+    2: """
+    CREATE TABLE text_item (
+        id INTEGER PRIMARY KEY,
+        page_id INTEGER NOT NULL REFERENCES page(id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        x0 REAL NOT NULL, y0 REAL NOT NULL, x1 REAL NOT NULL, y1 REAL NOT NULL,   -- пункты PDF
+        source TEXT NOT NULL,              -- слой | OCR | пользователь
+        confidence REAL,                   -- для OCR, %
+        version TEXT NOT NULL
+    );
+    CREATE INDEX text_item_page ON text_item(page_id);
+    CREATE TABLE stamp (
+        page_id INTEGER PRIMARY KEY REFERENCES page(id) ON DELETE CASCADE,
+        recognized INTEGER NOT NULL,
+        source TEXT NOT NULL,              -- слой | OCR
+        note TEXT,
+        confirmed INTEGER NOT NULL DEFAULT 0,
+        version TEXT NOT NULL
+    );
+    CREATE TABLE stamp_field (
+        id INTEGER PRIMARY KEY,
+        page_id INTEGER NOT NULL REFERENCES stamp(page_id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        rects TEXT NOT NULL,               -- JSON: [[x0,y0,x1,y1], ...]
+        confidence TEXT NOT NULL,
+        edited INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (page_id, name)
+    );
+    CREATE TABLE signature (
+        id INTEGER PRIMARY KEY,
+        page_id INTEGER NOT NULL REFERENCES stamp(page_id) ON DELETE CASCADE,
+        role TEXT NOT NULL, surname TEXT NOT NULL, date TEXT NOT NULL, rects TEXT NOT NULL
+    );
+    CREATE TABLE xlsx_table (
+        id INTEGER PRIMARY KEY,
+        file_id INTEGER NOT NULL REFERENCES file(id) ON DELETE CASCADE,
+        sheet TEXT NOT NULL,
+        header_row INTEGER NOT NULL,
+        schema TEXT NOT NULL,              -- JSON: {буква: {header, role}}
+        confidence TEXT NOT NULL,
+        confirmed INTEGER NOT NULL DEFAULT 0,
+        version TEXT NOT NULL
+    );
+    CREATE TABLE xlsx_row (
+        id INTEGER PRIMARY KEY,
+        table_id INTEGER NOT NULL REFERENCES xlsx_table(id) ON DELETE CASCADE,
+        row_no INTEGER NOT NULL,
+        cells TEXT NOT NULL                -- JSON: {буква: значение}
+    );
+    ALTER TABLE page ADD COLUMN extract_status TEXT;      -- NULL | готово | OCR: неуверенно | ошибка: …
+    """,
 }
 
 APP_MIGRATIONS: dict[int, str] = {

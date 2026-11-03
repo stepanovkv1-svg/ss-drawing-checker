@@ -66,11 +66,14 @@ jobs:
           Get-Content selftest.json -Encoding utf8
           $r = Get-Content selftest.json -Encoding utf8 | ConvertFrom-Json
           if (-not $r.ok) { throw "Самопроверка не прошла" }
-          if ($r.summary.pages -ne 2) { throw "Ожидалось 2 листа" }
+          if ($r.summary.pages -ne 3) { throw "Ожидалось 3 листа" }
           if ($r.pages[1].rotation -ne 270) { throw "Поворот второго листа не определён" }
           if ($r.intake[1].status -ne "уже есть") { throw "Повторный файл не распознан" }
           if (-not $r.only_local) { throw "Флаг «Только локально» не сохранился" }
           if (-not $r.tesseract) { throw "Tesseract не найден в сборке" }
+          if ($r.stamp."шифр" -ne "АГА02-03226-000-НСС-02-РД") { throw "Шифр из штампа не прочитан" }
+          if ($r.pages[2].extract_status -notlike "OCR*") { throw "OCR скана не выполнен" }
+          if ($r.ocr_items -lt 3) { throw "OCR нашёл слишком мало слов" }
           "Размер сборки, МБ: " + [math]::Round((Get-ChildItem dist\SSDrawingChecker -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - uses: actions/upload-artifact@v4

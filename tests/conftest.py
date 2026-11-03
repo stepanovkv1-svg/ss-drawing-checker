@@ -28,6 +28,14 @@ def sample_pdf(tmp_path_factory, font):
     return out
 
 
+@pytest.fixture(scope="session")
+def sample_xlsx(tmp_path_factory):
+    from make_test_pdf import make_xlsx
+    out = tmp_path_factory.mktemp("xlsx") / "Спецификация НСС-02.xlsx"
+    make_xlsx(str(out))
+    return out
+
+
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("SSDC_HOME", str(tmp_path / "home"))

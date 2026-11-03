@@ -1,6 +1,7 @@
 """Точка входа. `--selftest <pdf> <out.json>` — проверка сборки без окна (используется в CI)."""
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import tempfile
@@ -19,7 +20,7 @@ def selftest(pdf: str, out: str) -> int:
             folder = Path(td) / "Объект проверки"
             obj = ProjectObject.create(folder, "Самопроверка")
             res = add_files(obj, [Path(pdf), Path(pdf)])
-            rep["intake"] = [r.__dict__ for r in res]
+            rep["intake"] = [dataclasses.asdict(r) for r in res]
             obj.set_only_local(True)
             obj.close()
             obj = ProjectObject.open(folder)
@@ -27,6 +28,11 @@ def selftest(pdf: str, out: str) -> int:
             rep["summary"] = obj.summary()
             rep["pages"] = [dict(p) for f in obj.files() for p in obj.pages(f.id)]
             rep["tesseract"] = paths.tesseract_exe()
+            pdf_file = obj.files()[0]
+            pgs = obj.pages(pdf_file.id)
+            st = obj.stamp(pgs[0]["id"])
+            rep["stamp"] = {k: v["value"] for k, v in st["fields"].items()} if st else {}
+            rep["ocr_items"] = len(obj.text_items(pgs[-1]["id"])) if pgs else 0
             obj.close()
             db = AppDb(Path(td) / "app.db")
             db.remember_object(folder, "Самопроверка")
