@@ -1,0 +1,80 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e0-prototype:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-e0.txt
+          pip install pyinstaller==6.22.3 pip-licenses==5.5.5 reportlab==5.1.0
+
+      - name: Tesseract (rus+eng) для включения в сборку
+        shell: pwsh
+        run: |
+          choco install tesseract --no-progress -y
+          $src = "C:\Program Files\Tesseract-OCR"
+          New-Item -ItemType Directory -Force build_tess | Out-Null
+          Copy-Item "$src\*" build_tess -Recurse
+          Invoke-WebRequest -Uri "https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/rus.traineddata" -OutFile "build_tess\tessdata\rus.traineddata"
+          Get-ChildItem build_tess\tessdata\*.traineddata | Select-Object Name, Length
+          & "build_tess\tesseract.exe" --version
+
+      - name: Сборка PyInstaller (папка, без установки)
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --onedir --windowed --name SSDrawingChecker-E0 `
+            --collect-all pypdfium2 --collect-all pypdfium2_raw `
+            --add-data "build_tess;tesseract" `
+            src/ssdc/e0_prototype.py
+
+      - name: Список компонентов и лицензий (для справки)
+        shell: pwsh
+        run: |
+          pip-licenses --packages PySide6 PySide6_Essentials PySide6_Addons shiboken6 pypdfium2 pillow --format=plain-vertical --with-urls > THIRD-PARTY-NOTICES.txt
+          Add-Content THIRD-PARTY-NOTICES.txt "`nTesseract OCR (UB Mannheim build), Apache-2.0, https://github.com/tesseract-ocr/tesseract"
+          Add-Content THIRD-PARTY-NOTICES.txt "PDFium (через pypdfium2), BSD-3-Clause / Apache-2.0, https://pdfium.googlesource.com/pdfium/"
+          Copy-Item THIRD-PARTY-NOTICES.txt dist\SSDrawingChecker-E0\
+
+      - name: Самопроверка собранной программы
+        shell: pwsh
+        run: |
+          python tools/make_test_pdf.py C:\Windows\Fonts\arial.ttf test.pdf
+          $exe = "dist\SSDrawingChecker-E0\SSDrawingChecker-E0.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList "--selftest","test.pdf","selftest.json","ККС-47" -Wait -PassThru
+          Get-Content selftest.json -Encoding utf8
+          $r = Get-Content selftest.json -Encoding utf8 | ConvertFrom-Json
+          if (-not $r.ok) { throw "Самопроверка не прошла" }
+          if ($r.pages.Count -ne 2) { throw "Ожидалось 2 листа" }
+          if ($r.pages[1].rotation -ne 270) { throw "Поворот второго листа не определён" }
+          if ($r.found -lt 1) { throw "Надпись не найдена в текстовом слое" }
+          if (-not $r.ocr.ok) { throw "OCR не сработал: $($r.ocr.error)" }
+          if ($r.ocr.text -notmatch "47") { throw "OCR не распознал номер: $($r.ocr.text)" }
+          "Размер сборки, МБ: " + [math]::Round((Get-ChildItem dist\SSDrawingChecker-E0 -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Инструкция запуска
+        shell: pwsh
+        run: Copy-Item docs\ЗАПУСК.txt dist\SSDrawingChecker-E0\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SSDrawingChecker-E0-win11
+          path: dist/SSDrawingChecker-E0
+          retention-days: 30
