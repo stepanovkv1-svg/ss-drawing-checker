@@ -75,7 +75,7 @@ def page_info(doc: pdfium.PdfDocument) -> list[dict]:
             "format": sheet_format(w * MM_PER_PT, h * MM_PER_PT),
             "rotation": pg.get_rotation(),
             "text_chars": n,
-            "text_layer": "есть" if n > 50 else "нет (нужен OCR)",
+            "text_layer": "есть" if n > 0 else "нет (нужен OCR)",
         })
         tp.close()
         pg.close()
@@ -139,6 +139,7 @@ def draw_frames(img: Image.Image, px_boxes, pad=6) -> Image.Image:
 
 
 def ocr(img: Image.Image, lang: str = "rus+eng") -> dict:
+    """Распознаёт фрагмент. Возвращает текст и среднюю уверенность Tesseract (0–100)."""
     exe = tesseract_exe()
     if not exe:
         return {"ok": False, "error": "Tesseract не найден в составе сборки"}
@@ -149,13 +150,41 @@ def ocr(img: Image.Image, lang: str = "rus+eng") -> dict:
         td_dir = tessdata_dir()
         if td_dir:
             cmd += ["--tessdata-dir", td_dir]
+        cmd += ["tsv"]
         flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
         t0 = time.perf_counter()
         p = subprocess.run(cmd, capture_output=True, creationflags=flags, timeout=300)
         dt = time.perf_counter() - t0
     if p.returncode != 0:
         return {"ok": False, "error": p.stderr.decode("utf-8", "replace")[-500:]}
-    return {"ok": True, "text": p.stdout.decode("utf-8", "replace"), "seconds": round(dt, 2)}
+    words, confs, line_key, lines = [], [], None, []
+    for row in p.stdout.decode("utf-8", "replace").splitlines()[1:]:
+        f = row.split("\t")
+        if len(f) < 12 or f[0] != "5" or not f[11].strip():
+            continue
+        key = (f[2], f[3], f[4])
+        if key != line_key:
+            lines.append([])
+            line_key = key
+        lines[-1].append(f[11])
+        confs.append(float(f[10]))
+    text = "\n".join(" ".join(l) for l in lines)
+    conf = round(sum(confs) / len(confs), 1) if confs else 0.0
+    return {"ok": True, "text": text, "confidence": conf, "seconds": round(dt, 2)}
+
+
+def ocr_crop(img: Image.Image) -> dict:
+    """OCR фрагмента; вертикальную надпись (высота заметно больше ширины) пробует в обоих поворотах."""
+    w, h = img.size
+    if h <= 1.5 * w:
+        return ocr(img)
+    best = None
+    for angle in (90, 270):
+        r = ocr(img.rotate(angle, expand=True, fillcolor="white"))
+        score = r.get("confidence", 0)
+        if best is None or score > best[0]:
+            best = (score, r)
+    return best[1]
 
 
 def selftest(pdf_path: str, out_path: str, needle: str = "") -> int:
@@ -181,7 +210,7 @@ def selftest(pdf_path: str, out_path: str, needle: str = "") -> int:
                 big = render(doc, 0, 300)
                 px300 = boxes_to_pixels(doc, 0, boxes[:1], 300)[0]
                 a, b, c, d = px300
-                rep["ocr"] = ocr(big.crop((max(0, a - 20), max(0, b - 20), c + 20, d + 20)))
+                rep["ocr"] = ocr_crop(big.crop((max(0, a - 20), max(0, b - 20), c + 20, d + 20)))
         else:
             w, h = img.size
             rep["ocr"] = ocr(img.crop((w // 3, h // 3, 2 * w // 3, 2 * h // 3)))
@@ -321,9 +350,9 @@ def run_gui() -> int:
             i = self.boxes_pdf_page
             big = render(self.doc, i, 300)
             a, b, c, d = boxes_to_pixels(self.doc, i, self.boxes_pdf[:1], 300)[0]
-            res = ocr(big.crop((max(0, a - 20), max(0, b - 20), c + 20, d + 20)))
+            res = ocr_crop(big.crop((max(0, a - 20), max(0, b - 20), c + 20, d + 20)))
             if res["ok"]:
-                QMessageBox.information(self, "OCR", f"Текстовый слой: {self.search.text()}\nOCR ({res['seconds']} с): {res['text'].strip()}")
+                QMessageBox.information(self, "OCR", f"Текстовый слой: {self.search.text()}\nOCR ({res['seconds']} с, уверенность {res['confidence']}%): {res['text'].strip()}")
             else:
                 QMessageBox.warning(self, "OCR", res["error"])
 
