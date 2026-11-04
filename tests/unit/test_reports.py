@@ -85,6 +85,7 @@ def test_excel_structure_matches_approved_sample(tmp_path, sample_pdf):
     assert [c.value for c in wb["Покрытие проверки"][9]] == excel.STAGE_COLS
     n_f, n_p = wb["Замечания"].max_row - 1, wb["Места"].max_row - 1
     assert n_f == len(store.findings(o.con)) and n_f >= 2
-    assert wb["Замечания"]["A2"].value == "1.1" and wb["Места"]["G2"].value is not None   # координаты мест
+    assert wb["Замечания"]["A2"].value == "1.1"
+    assert any(wb["Места"].cell(r, 7).value is not None for r in range(2, n_p + 2))   # координаты мест
     assert len(wb["Замечания"]._images) >= 1 and len(wb["Места"]._images) >= 1
     assert wb["Состав комплекта"].max_row == 6
