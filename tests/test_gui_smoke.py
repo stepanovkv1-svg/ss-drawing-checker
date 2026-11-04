@@ -21,7 +21,7 @@ def test_main_window_flow(tmp_path, sample_pdf, sample_xlsx, monkeypatch):
     w.new_object()
     assert w.obj is not None and w.obj.name == "Аэропорт"
     w.start_intake([sample_pdf, sample_xlsx])
-    for _ in range(500):
+    for _ in range(6000):              # до 60 с: OCR скана и штампа-картинки
         QCoreApplication.processEvents()
         if w.thread is None:
             break
