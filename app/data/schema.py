@@ -102,6 +102,22 @@ OBJECT_MIGRATIONS: dict[int, str] = {
     );
     ALTER TABLE page ADD COLUMN extract_status TEXT;      -- NULL | готово | OCR: неуверенно | ошибка: …
     """,
+    3: """
+    CREATE TABLE classification (
+        page_id INTEGER PRIMARY KEY REFERENCES page(id) ON DELETE CASCADE,
+        data TEXT NOT NULL,                -- JSON: марка, раздел, подсистемы, типы — значение, уверенность, признаки
+        level TEXT NOT NULL,               -- уверенно | спорно | не определено
+        conflict TEXT NOT NULL DEFAULT '', -- противоречие «шифр ↔ содержание»
+        source TEXT NOT NULL,              -- авто | пользователь
+        dict_version TEXT NOT NULL,
+        decision_key TEXT NOT NULL
+    );
+    CREATE TABLE class_decision (
+        key TEXT PRIMARY KEY,              -- документ, шифр, номер и наименование листа (ТЗ 4.5)
+        data TEXT NOT NULL,
+        decided_at TEXT NOT NULL
+    );
+    """,
 }
 
 APP_MIGRATIONS: dict[int, str] = {

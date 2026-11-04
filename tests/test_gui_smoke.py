@@ -41,6 +41,22 @@ def test_main_window_flow(tmp_path, sample_pdf, sample_xlsx, monkeypatch):
     xl = w.tree.topLevelItem(1)
     w.on_tree_click(xl.child(0), 0)
     assert w.details.xlsx.table.rowCount() == 2
+    w.details.xlsx.confirm()
+    assert w.obj.xlsx_tables(xl.data(0, Qt.UserRole)[1])[0]["confirmed"] == 1
+    # «Состав комплекта»: листы с классификацией, подтверждение выбранных, открытие листа
+    w.tabs.setCurrentIndex(1)
+    comp = w.composition
+    assert comp.table.rowCount() == 5 and "Листов: 5" in comp.summary.text()
+    assert comp.table.item(0, 3).text() == "НСС" and comp.table.item(0, 4).text() == "СС"
+    comp.table.selectRow(1)
+    pid2 = comp.table.item(1, 0).data(Qt.UserRole)[2]
+    comp.confirm_selected()
+    assert w.obj.classification(pid2).source == "пользователь"
+    assert comp.xlsx.rowCount() == 2 and comp.xlsx.item(0, 4).text() == "да"
+    comp._open(1, 0)
+    assert w.details.currentWidget() is w.details.stamp
+    w.details.stamp.confirm()
+    assert w.obj.stamp(pid2)["confirmed"] is False or w.obj.stamp(pid2)["recognized"] is False
     w.on_tree_click(top.child(1), 0)
     assert w.sheet.doc is not None
     w.sheet.find.setText("ККС-49")

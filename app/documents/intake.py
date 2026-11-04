@@ -85,6 +85,9 @@ def add_files(obj: ProjectObject, paths: list[Path],
             from .extract import extract_file   # шаг 2: текст, OCR, штампы, таблицы
             ex = extract_file(obj, row.id, cancelled)
             r.extract = ex
+            if row.kind == "PDF" and not (cancelled and cancelled()):
+                from .classify import classify_file    # шаг 3: марка, раздел, подсистемы, типы
+                classify_file(obj, row.id)
             if ex.errors:
                 r.message = "; ".join(ex.errors)
         results.append(r)

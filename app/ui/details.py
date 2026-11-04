@@ -5,8 +5,8 @@ import json
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtWidgets import (QComboBox, QHeaderView, QLabel, QStackedWidget, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QPushButton,
+                               QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ..data import ProjectObject
 
@@ -30,17 +30,33 @@ class StampPanel(QWidget):
         self.table.itemChanged.connect(self.on_changed)
         self.sigs = QLabel()
         self.sigs.setWordWrap(True)
+        self.b_confirm = QPushButton("Штамп проверен")
+        self.b_confirm.setToolTip("Подтвердить, что поля штампа прочитаны верно (особенно после OCR)")
+        self.b_confirm.clicked.connect(self.confirm)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.note)
         lay.addWidget(self.table, 1)
-        lay.addWidget(self.sigs)
+        row = QHBoxLayout()
+        row.addWidget(self.sigs, 1)
+        row.addWidget(self.b_confirm)
+        lay.addLayout(row)
+
+    def confirm(self):
+        st = self.obj.stamp(self.page_id) if self.obj and self.page_id else None
+        if st and st["recognized"]:
+            self.obj.confirm_stamp(self.page_id)
+            self.b_confirm.setText("Штамп подтверждён")
+            self.b_confirm.setEnabled(False)
+            self.edited.emit()
 
     def show_page(self, obj: ProjectObject, page_id: int, extract_status: str | None):
         self.obj, self.page_id = obj, page_id
         st = obj.stamp(page_id)
         self.table.blockSignals(True)
         self.table.setRowCount(0)
+        self.b_confirm.setEnabled(bool(st and st["recognized"] and not st["confirmed"]))
+        self.b_confirm.setText("Штамп подтверждён" if st and st["confirmed"] else "Штамп проверен")
         if not st:
             self.note.setText("Данные листа ещё не извлечены.")
             self.table.blockSignals(False)
@@ -90,9 +106,17 @@ class XlsxPanel(QWidget):
         self.info.setWordWrap(True)
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.b_role = QPushButton("Назначение столбца…")
+        self.b_role.clicked.connect(self.edit_role)
+        self.b_ok = QPushButton("Подтвердить схему")
+        self.b_ok.clicked.connect(self.confirm)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self.sheet)
+        top = QHBoxLayout()
+        top.addWidget(self.sheet, 1)
+        top.addWidget(self.b_role)
+        top.addWidget(self.b_ok)
+        lay.addLayout(top)
         lay.addWidget(self.info)
         lay.addWidget(self.table, 1)
 
@@ -114,8 +138,9 @@ class XlsxPanel(QWidget):
         schema = json.loads(t["schema"])
         letters = list(schema)
         unknown = [schema[c]["header"] for c in letters if not schema[c]["role"]]
-        self.info.setText(f"Строка заголовка: {t['header_row']}. Схема определена автоматически "
-                          f"(уверенность: {t['confidence']}); подтверждение — в «Составе комплекта» (шаг 3)."
+        self.info.setText(f"Строка заголовка: {t['header_row']}. Схема "
+                          + ("подтверждена." if t["confirmed"] else
+                             f"определена автоматически (уверенность: {t['confidence']}) — проверьте и подтвердите.")
                           + (f" Столбцы без назначения: {', '.join(unknown)}." if unknown else ""))
         rows = self.obj.xlsx_rows(t["id"])
         self.table.setColumnCount(len(letters) + 1)
@@ -128,6 +153,41 @@ class XlsxPanel(QWidget):
             for k, c in enumerate(letters, 1):
                 self.table.setItem(r, k, QTableWidgetItem(cells.get(c, "")))
         self.table.resizeColumnsToContents()
+
+
+    def _current(self):
+        idx = self.sheet.currentIndex()
+        return self.tables[idx] if self.obj and 0 <= idx < len(self.tables) else None
+
+    def edit_role(self):
+        from ..documents.xlsx import COLUMN_SYNONYMS
+        t = self._current()
+        if not t:
+            return
+        schema = json.loads(t["schema"])
+        cols = [f"{c}: {v['header']} → {v['role'] or '?'}" for c, v in schema.items()]
+        col, ok = QInputDialog.getItem(self, "Назначение столбца", "Столбец:", cols, 0, False)
+        if not ok:
+            return
+        letter = col.split(":")[0]
+        roles = ["(нет)"] + [r for r, _ in COLUMN_SYNONYMS]
+        role, ok = QInputDialog.getItem(self, "Назначение столбца", f"Что в столбце {letter}?", roles, 0, False)
+        if not ok:
+            return
+        schema[letter]["role"] = None if role == "(нет)" else role
+        self.obj.confirm_xlsx_table(t["id"], schema)
+        self.refresh_keep(t["file_id"])
+
+    def confirm(self):
+        t = self._current()
+        if t:
+            self.obj.confirm_xlsx_table(t["id"])
+            self.refresh_keep(t["file_id"])
+
+    def refresh_keep(self, file_id):
+        idx = self.sheet.currentIndex()
+        self.show_file(self.obj, file_id)
+        self.sheet.setCurrentIndex(idx)
 
 
 class DetailsPanel(QStackedWidget):

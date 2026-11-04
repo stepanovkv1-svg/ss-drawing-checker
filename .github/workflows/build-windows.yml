@@ -46,6 +46,7 @@ jobs:
           pyinstaller --noconfirm --onedir --windowed --name SSDrawingChecker `
             --collect-all pypdfium2 --collect-all pypdfium2_raw `
             --add-data "build_tess;tesseract" `
+            --add-data "resources;resources" `
             run.py
 
       - name: Список компонентов и лицензий (для справки)
@@ -76,6 +77,7 @@ jobs:
           if ($r.ocr_items -lt 3) { throw "OCR нашёл слишком мало слов" }
           if ($r.stamps[3]."лист" -ne "4") { throw "Штамп формы 6 (последующий лист) не прочитан" }
           if ($r.stamps[4]."шифр" -ne "НСС-02-РД-ОБЩ") { throw "Штамп-картинка (OCR граф) не прочитан" }
+          if ($r.classes[0].section -ne "СС") { throw "Классификация листа не выполнена (словарь не найден?)" }
           "Размер сборки, МБ: " + [math]::Round((Get-ChildItem dist\SSDrawingChecker -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - uses: actions/upload-artifact@v4
