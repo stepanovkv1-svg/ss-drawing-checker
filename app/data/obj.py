@@ -173,6 +173,38 @@ class ProjectObject:
     def pages(self, file_id: int) -> list[sqlite3.Row]:
         return self.con.execute("SELECT * FROM page WHERE file_id=? ORDER BY page_no", (file_id,)).fetchall()
 
+    def stamp(self, page_id: int) -> dict | None:
+        st = self.con.execute("SELECT * FROM stamp WHERE page_id=?", (page_id,)).fetchone()
+        if not st:
+            return None
+        fields = {r["name"]: dict(r) for r in self.con.execute(
+            "SELECT name, value, rects, confidence, edited FROM stamp_field WHERE page_id=?", (page_id,))}
+        sigs = [dict(r) for r in self.con.execute(
+            "SELECT role, surname, date FROM signature WHERE page_id=? ORDER BY id", (page_id,))]
+        return {"recognized": bool(st["recognized"]), "source": st["source"], "note": st["note"],
+                "confirmed": bool(st["confirmed"]), "fields": fields, "signatures": sigs}
+
+    def set_stamp_field(self, page_id: int, name: str, value: str) -> None:
+        """Правка поля штампа пользователем: сохраняется и не перезаписывается при пересчёте."""
+        old = self.con.execute("SELECT value FROM stamp_field WHERE page_id=? AND name=?", (page_id, name)).fetchone()
+        with self.con:
+            if old:
+                self.con.execute("UPDATE stamp_field SET value=?, edited=1, confidence='пользователь' "
+                                 "WHERE page_id=? AND name=?", (value, page_id, name))
+            else:
+                self.con.execute("INSERT INTO stamp_field(page_id, name, value, rects, confidence, edited) "
+                                 "VALUES (?,?,?,'[]','пользователь',1)", (page_id, name, value))
+            self._history("stamp_field", page_id, name, old[0] if old else None, value)
+
+    def text_items(self, page_id: int) -> list[sqlite3.Row]:
+        return self.con.execute("SELECT * FROM text_item WHERE page_id=? ORDER BY id", (page_id,)).fetchall()
+
+    def xlsx_tables(self, file_id: int) -> list[sqlite3.Row]:
+        return self.con.execute("SELECT * FROM xlsx_table WHERE file_id=? ORDER BY id", (file_id,)).fetchall()
+
+    def xlsx_rows(self, table_id: int) -> list[sqlite3.Row]:
+        return self.con.execute("SELECT * FROM xlsx_row WHERE table_id=? ORDER BY row_no", (table_id,)).fetchall()
+
     def summary(self) -> dict:
         r = self.con.execute(
             "SELECT COUNT(*) AS files, SUM(status='прочитан') AS ok, SUM(status!='прочитан') AS bad FROM file").fetchone()

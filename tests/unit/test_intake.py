@@ -16,15 +16,15 @@ def test_intake_pdf_and_errors(tmp_path, sample_pdf):
     res = add_files(o, [sample_pdf, broken, empty, badx, sample_pdf])
     st = {r.name: (r.status, r.message) for r in res}
     assert st[sample_pdf.name][0] in ("прочитан", "уже есть")
-    assert res[0].status == "прочитан" and res[0].pages == 2
+    assert res[0].status == "прочитан" and res[0].pages == 5
     assert res[-1].status == "уже есть"
     assert st["обрезан.pdf"] == ("ошибка", "файл повреждён или это не PDF")
     assert st["пустой.pdf"][0] == "ошибка"
     assert st["таблица.xlsx"][0] == "ошибка"
     f = o.files()[0]
     pages = o.pages(f.id)
-    assert [p["format"] for p in pages] == ["A3", "A3"]
-    assert [p["rotation"] for p in pages] == [0, 270]
+    assert [p["format"] for p in pages] == ["A3"] * 5
+    assert [p["rotation"] for p in pages] == [0, 270, 0, 0, 0]
     assert pages[0]["text_chars"] > 0
     o.close()
 

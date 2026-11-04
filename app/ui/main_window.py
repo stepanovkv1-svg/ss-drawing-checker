@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFileDialog, QHBoxL
 from .. import APP_NAME, VERSION, paths
 from ..data import AppDb, ObjectError, ProjectObject
 from ..documents.intake import add_files
+from .details import DetailsPanel
 from .sheet_view import SheetView
 
 ACCEPT = {".pdf", ".xlsx", ".md", ".docx"}
@@ -118,13 +119,18 @@ class MainWindow(QMainWindow):
         ml.addLayout(row)
         ml.addWidget(self.summary)
 
-        # ---- правая колонка: лист
+        # ---- правая колонка: лист и сведения о нём
         self.sheet = SheetView()
+        self.details = DetailsPanel()
+        right = QSplitter(Qt.Vertical)
+        right.addWidget(self.sheet)
+        right.addWidget(self.details)
+        right.setSizes([620, 280])
 
         split = QSplitter()
         split.addWidget(left)
         split.addWidget(mid)
-        split.addWidget(self.sheet)
+        split.addWidget(right)
         split.setSizes([230, 520, 750])
         self.setCentralWidget(split)
         self.statusBar().showMessage("Сеть не используется. Данные программы: " + str(paths.user_data_dir()))
@@ -187,6 +193,7 @@ class MainWindow(QMainWindow):
         self.only_local.blockSignals(False)
         self.set_object_enabled(True)
         self.sheet.clear()
+        self.details.clear()
         self.refresh_files()
 
     def set_object_enabled(self, on: bool):
@@ -208,21 +215,44 @@ class MainWindow(QMainWindow):
             if f.status != "прочитан":
                 top.setForeground(4, Qt.red)
             for p in self.obj.pages(f.id):
-                txt = "есть" if p["text_chars"] else "нет — нужен OCR"
-                it = QTreeWidgetItem([f"Лист {p['page_no']}", p["format"], f"{p['rotation']}°", txt, ""])
-                it.setData(0, Qt.UserRole, ("page", f.id, p["page_no"]))
+                es = p["extract_status"] or ""
+                if p["text_chars"] and "без кодировки" in es:
+                    txt = "без кодировки — " + ("OCR" if "OCR" in es else "не читается")
+                else:
+                    txt = "есть" if p["text_chars"] else "нет — " + (es or "нужен OCR")
+                st = self.obj.stamp(p["id"])
+                title = f"Лист {p['page_no']}"
+                if st and st["fields"].get("лист"):
+                    title += f" (по штампу {st['fields']['лист']['value']})"
+                if st and st["fields"].get("наименование листа"):
+                    title += " — " + st["fields"]["наименование листа"]["value"]
+                it = QTreeWidgetItem([title, p["format"], f"{p['rotation']}°", txt,
+                                      "" if not st or st["recognized"] else "штамп не распознан"])
+                it.setData(0, Qt.UserRole, ("page", f.id, p["page_no"], p["id"], p["extract_status"]))
                 top.addChild(it)
+            if f.kind == "XLSX":
+                for t in self.obj.xlsx_tables(f.id):
+                    n = len(self.obj.xlsx_rows(t["id"]))
+                    it = QTreeWidgetItem([f"Лист «{t['sheet']}»: {n} строк", "", "", "", ""])
+                    it.setData(0, Qt.UserRole, ("xlsx", f.id))
+                    top.addChild(it)
             self.tree.addTopLevelItem(top)
         s = self.obj.summary()
         self.summary.setText(f"Файлов: {s['files']}, прочитано: {s['ok']}, с ошибками: {s['bad']}, листов: {s['pages']}")
 
     def on_tree_click(self, item: QTreeWidgetItem, _col: int):
         data = item.data(0, Qt.UserRole)
-        if not data or data[0] != "page" or not self.obj:
+        if not data or not self.obj:
             return
-        _, file_id, page_no = data
+        if data[0] == "xlsx":
+            self.details.show_xlsx(self.obj, data[1])
+            return
+        if data[0] != "page":
+            return
+        _, file_id, page_no, page_id, status = data
         f = next(x for x in self.obj.files() if x.id == file_id)
         self.sheet.show_page(str(self.obj.file_path(f)), page_no, f"{f.name} — лист {page_no}")
+        self.details.show_page(self.obj, page_id, status)
 
     def add_files_dialog(self):
         if not self.obj:
@@ -275,6 +305,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Убрать файл", f"Убрать «{f.name}» из объекта? Копия в папке объекта будет удалена.") \
                 == QMessageBox.Yes:
             self.sheet.clear()
+            self.details.clear()
             self.obj.remove_file(f.id)
             self.refresh_files()
 

@@ -8,7 +8,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from PIL import Image
 
-from .base import PageInfo, PdfError, Rect, TextHit
+from .base import PageInfo, PdfError, Rect, TextHit, TextRun
 
 # PDFium не потокобезопасен: все вызовы движка идут под одной блокировкой.
 _LOCK = threading.RLock()
@@ -100,11 +100,48 @@ class PdfiumDocument:
                 pg.close()
         return hits
 
+    def runs(self, index: int) -> list[TextRun]:
+        """Фрагменты текстового слоя с координатами (PDF и отображения)."""
+        out: list[TextRun] = []
+        with _LOCK:
+            pg = self._doc[index]
+            tp = pg.get_textpage()
+            try:
+                w, h = pg.get_size()
+                W, H = round(w * 4), round(h * 4)   # 4 пикселя на пункт — точность 0,1 мм
+                dx, dy = ctypes.c_int(), ctypes.c_int()
+                for k in range(tp.count_rects()):
+                    l, b, r, t = tp.get_rect(k)
+                    text = tp.get_text_bounded(left=l, bottom=b, right=r, top=t)
+                    if not text.strip():
+                        continue
+                    pts = []
+                    for x, y in ((l, b), (r, t)):
+                        pdfium_c.FPDF_PageToDevice(pg.raw, 0, 0, W, H, 0, x, y, ctypes.byref(dx), ctypes.byref(dy))
+                        pts.append((dx.value / 4, dy.value / 4))
+                    (a, b2), (c, d) = pts
+                    out.append(TextRun(text.strip(), (l, b, r, t), (min(a, c), min(b2, d), max(a, c), max(b2, d))))
+            finally:
+                tp.close()
+                pg.close()
+        return out
+
     def render(self, index: int, dpi: int) -> Image.Image:
         with _LOCK:
             pg = self._doc[index]
             try:
                 return pg.render(scale=dpi / 72).to_pil().convert("RGB")
+            finally:
+                pg.close()
+
+    def render_region(self, index: int, dpi: int, box: Rect) -> Image.Image:
+        """Отрисовка части листа. box — координаты отображения в пунктах (x0, y0, x1, y1), начало вверху слева."""
+        with _LOCK:
+            pg = self._doc[index]
+            try:
+                w, h = pg.get_size()
+                x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(w, box[2]), min(h, box[3])
+                return pg.render(scale=dpi / 72, crop=(x0, h - y1, w - x1, y0)).to_pil().convert("RGB")
             finally:
                 pg.close()
 
@@ -124,6 +161,26 @@ class PdfiumDocument:
                         pts.append((dx.value, dy.value))
                     (a, b), (c, d) = pts
                     out.append((min(a, c), min(b, d), max(a, c), max(b, d)))
+            finally:
+                pg.close()
+        return out
+
+    def from_pixels(self, index: int, boxes: list[tuple[int, int, int, int]], dpi: int) -> list[Rect]:
+        """Пиксели отрисовки → координаты PDF (для результатов OCR)."""
+        out: list[Rect] = []
+        with _LOCK:
+            pg = self._doc[index]
+            try:
+                w, h = pg.get_size()
+                W, H = round(w * dpi / 72), round(h * dpi / 72)
+                px, py = ctypes.c_double(), ctypes.c_double()
+                for a, b, c, d in boxes:
+                    pts = []
+                    for x, y in ((a, b), (c, d)):
+                        pdfium_c.FPDF_DeviceToPage(pg.raw, 0, 0, W, H, 0, int(x), int(y), ctypes.byref(px), ctypes.byref(py))
+                        pts.append((px.value, py.value))
+                    (x0, y0), (x1, y1) = pts
+                    out.append((min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)))
             finally:
                 pg.close()
         return out
