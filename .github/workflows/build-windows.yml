@@ -84,6 +84,7 @@ jobs:
           if ($r.checks.shots -lt 1) { throw "Скриншоты мест не сделаны" }
           if ($r.checks.instr.Count -ne 3) { throw "Требования инструкции не выполнены" }
           if ($r.checks.rules -notcontains "ВО-02 · Самопроверка") { throw "Требование ВО-02 не нашло заложенный текст" }
+          if ($r.html.placeholders -ne 0 -or $r.html.rules -lt 3) { throw "HTML-реестр по шаблону не собран" }
           "Размер сборки, МБ: " + [math]::Round((Get-ChildItem dist\SSDrawingChecker -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - uses: actions/upload-artifact@v4

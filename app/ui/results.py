@@ -119,6 +119,10 @@ class ResultsPanel(QWidget):
         top.addWidget(self.b_run)
         top.addWidget(self.b_stop)
         top.addWidget(self.progress, 1)
+        self.b_html = QPushButton("Экспорт HTML…")
+        self.b_html.setToolTip("Реестр по утверждённому шаблону; отклонённые замечания не выгружаются")
+        self.b_html.clicked.connect(self.export_html)
+        top.addWidget(self.b_html)
         filt = QHBoxLayout()
         for w in (self.f_cls, self.f_grp, self.f_dec):
             filt.addWidget(w)
@@ -202,6 +206,25 @@ class ResultsPanel(QWidget):
             QMessageBox.warning(self, "Проверка", f"Проверка прервана ошибкой: {result}")
         self.refresh()
         self.changed.emit()
+
+    def export_html(self):
+        if not self.obj:
+            return
+        from ..reports import html
+        n = self.obj.con.execute("SELECT COUNT(*) FROM finding WHERE decision='не рассмотрено'").fetchone()[0]
+        if n and QMessageBox.question(self, "Экспорт", f"Не рассмотрено замечаний: {n}. Они попадут в реестр как есть. "
+                                      "Продолжить?") != QMessageBox.Yes:
+            return
+        try:
+            out, stat = html.export(self.obj)
+        except Exception as e:  # noqa: BLE001 — показать причину, а не уронить окно
+            QMessageBox.warning(self, "Экспорт", f"Реестр не выгружен: {e}")
+            return
+        QMessageBox.information(self, "Экспорт", f"Реестр сохранён:\n{out}\n\nЗамечаний: {stat.get('total', 0)}; "
+                                f"отклонённых не выгружено: {stat.get('rejected', 0)}.")
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out.parent)))
 
     # ------------------------------------------------------------------ показ
     def refresh(self):
