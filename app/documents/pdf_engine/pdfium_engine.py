@@ -134,6 +134,17 @@ class PdfiumDocument:
             finally:
                 pg.close()
 
+    def render_region(self, index: int, dpi: int, box: Rect) -> Image.Image:
+        """Отрисовка части листа. box — координаты отображения в пунктах (x0, y0, x1, y1), начало вверху слева."""
+        with _LOCK:
+            pg = self._doc[index]
+            try:
+                w, h = pg.get_size()
+                x0, y0, x1, y1 = max(0, box[0]), max(0, box[1]), min(w, box[2]), min(h, box[3])
+                return pg.render(scale=dpi / 72, crop=(x0, h - y1, w - x1, y0)).to_pil().convert("RGB")
+            finally:
+                pg.close()
+
     def to_pixels(self, index: int, rects: list[Rect], dpi: int) -> list[tuple[int, int, int, int]]:
         """Координаты PDF → пиксели отрисовки. Поворот учитывает PDFium (Э0, И4)."""
         out = []

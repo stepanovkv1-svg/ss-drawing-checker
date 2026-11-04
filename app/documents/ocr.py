@@ -33,7 +33,7 @@ def available() -> bool:
     return paths.tesseract_exe() is not None
 
 
-def recognize(img: Image.Image, psm: int = 11, timeout: int = 600) -> list[OcrWord]:
+def recognize(img: Image.Image, psm: int = 11, timeout: int = 600, extra: list[str] | None = None) -> list[OcrWord]:
     exe = paths.tesseract_exe()
     if not exe:
         raise OcrUnavailable("Tesseract не найден в составе программы")
@@ -44,7 +44,7 @@ def recognize(img: Image.Image, psm: int = 11, timeout: int = 600) -> list[OcrWo
         tdd = paths.tessdata_dir()
         if tdd:
             cmd += ["--tessdata-dir", tdd]
-        cmd += ["tsv"]
+        cmd += list(extra or []) + ["tsv"]
         flags = 0x08000000 if os.name == "nt" else 0          # без окна консоли
         p = subprocess.run(cmd, capture_output=True, creationflags=flags, timeout=timeout)
     if p.returncode != 0:

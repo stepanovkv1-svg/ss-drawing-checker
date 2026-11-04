@@ -215,7 +215,11 @@ class MainWindow(QMainWindow):
             if f.status != "прочитан":
                 top.setForeground(4, Qt.red)
             for p in self.obj.pages(f.id):
-                txt = "есть" if p["text_chars"] else "нет — " + (p["extract_status"] or "нужен OCR")
+                es = p["extract_status"] or ""
+                if p["text_chars"] and "без кодировки" in es:
+                    txt = "без кодировки — " + ("OCR" if "OCR" in es else "не читается")
+                else:
+                    txt = "есть" if p["text_chars"] else "нет — " + (es or "нужен OCR")
                 st = self.obj.stamp(p["id"])
                 title = f"Лист {p['page_no']}"
                 if st and st["fields"].get("лист"):

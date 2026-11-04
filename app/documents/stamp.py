@@ -44,6 +44,8 @@ class Stamp:
     fields: dict[str, StampField] = field(default_factory=dict)
     signatures: list[dict] = field(default_factory=list)   # роль, фамилия, дата
     note: str = ""
+    form: str = ""                                          # форма основной надписи
+    source: str = "слой"                                    # слой | OCR
 
     def get(self, name: str) -> str:
         f = self.fields.get(name)
@@ -143,7 +145,7 @@ def parse_stamp(runs: list[TextRun], page_w_pt: float, page_h_pt: float) -> Stam
     mid_left = (date_l[0].rr - 2) if date_l else stadia.r + 70   # левая граница средней графы (мм от правого края)
     right_edge = stadia.r + 2                                    # граница правой части (графа «Стадия» и правее)
 
-    st = Stamp(True)
+    st = Stamp(True, form="форма 3, первый лист")
     fields: dict[str, StampField | None] = {}
 
     # Стадия / Лист / Листов: значения под подписями, в своей колонке

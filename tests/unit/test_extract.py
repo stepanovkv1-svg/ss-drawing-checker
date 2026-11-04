@@ -100,3 +100,33 @@ def test_xlsx_broken(tmp_path):
     p.write_bytes(b"PK\x03\x04garbage")
     with pytest.raises(Exception):
         parse_workbook(str(p))
+
+
+def test_stamp_form6_next_sheet(obj):
+    """Последующий лист: основная надпись по форме 6 находится по линиям рамки, текст — из слоя."""
+    pdf = obj.files()[0]
+    st = obj.stamp(obj.pages(pdf.id)[3]["id"])
+    assert st["recognized"] and "форма 6" in st["note"]
+    f = {k: v["value"] for k, v in st["fields"].items()}
+    assert f["шифр"] == "АГА02-03226-000-НСС-02-РД" and f["лист"] == "4"
+
+
+@pytest.mark.skipif(not ocr.available(), reason="Tesseract не установлен")
+def test_stamp_drawn_as_image(obj):
+    """Штамп без текста в слое (как шрифты SHX): графы читаются OCR по сетке формы 3."""
+    pdf = obj.files()[0]
+    st = obj.stamp(obj.pages(pdf.id)[4]["id"])
+    assert st["recognized"] and "форма 3" in st["note"] and "OCR" in st["note"]
+    f = {k: v["value"] for k, v in st["fields"].items()}
+    assert f["шифр"] == "НСС-02-РД-ОБЩ"
+    assert f["лист"] == "1" and f["листов"] == "12" and f["стадия"] == "Р"
+    assert f["наименование листа"] == "Ведомость листов"
+    assert st["signatures"][0]["surname"] == "Иванов"
+
+
+def test_garbled_layer_detected():
+    from app.documents.pdf_engine import TextRun
+    from app.documents.stamp_grid import layer_is_garbled
+    bad = [TextRun("\x0e\x13\x06\x1a\x02", (0, 0, 1, 1), (0, 0, 1, 1))] * 3
+    good = [TextRun("Стадия", (0, 0, 1, 1), (0, 0, 1, 1))]
+    assert layer_is_garbled(bad + good) and not layer_is_garbled(good)

@@ -28,7 +28,7 @@ def test_main_window_flow(tmp_path, sample_pdf, sample_xlsx, monkeypatch):
         w.thread.wait(10)
     assert w.thread is None
     top = w.tree.topLevelItem(0)
-    assert top.text(4) == "прочитан" and top.childCount() == 3
+    assert top.text(4) == "прочитан" and top.childCount() == 5
     assert "Схема кабельной канализации" in top.child(0).text(0)
     w.on_tree_click(top.child(0), 0)
     assert w.details.currentWidget() is w.details.stamp

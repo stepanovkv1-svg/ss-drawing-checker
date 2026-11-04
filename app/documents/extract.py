@@ -10,9 +10,10 @@ from ..data import ProjectObject
 from . import ocr
 from .pdf_engine import PdfError, TextRun, engine
 from .stamp import parse_stamp
+from .stamp_grid import layer_is_garbled, parse_stamp_grid
 from .xlsx import parse_workbook
 
-EXTRACT_VERSION = "e1.2"
+EXTRACT_VERSION = "e1.3"
 OCR_DPI = 300
 OCR_MAX_PIXELS = 80_000_000      # большие листы распознаются при меньшем разрешении
 
@@ -63,6 +64,10 @@ def extract_pdf(obj: ProjectObject, file_id: int, cancelled: Callable[[], bool] 
             if page["text_chars"] > 0:
                 runs = doc.runs(i)
                 items = [(r.text, r.rect, None) for r in runs]
+                if layer_is_garbled(runs):
+                    # шрифт без таблицы кодировки: в слое «мусор»; текст листа считается нечитаемым
+                    status = "текстовый слой без кодировки — текст не читается"
+                    items = []
             elif ocr.available():
                 try:
                     runs, items = _ocr_page(doc, i, page["width_pt"], page["height_pt"])
@@ -76,6 +81,18 @@ def extract_pdf(obj: ProjectObject, file_id: int, cancelled: Callable[[], bool] 
             else:
                 runs, items, status = [], [], "нет текста, OCR недоступен"
             st = parse_stamp(runs, page["width_pt"], page["height_pt"])
+            if not st.recognized:
+                try:
+                    # после OCR всего листа графы читаются заново по сетке — OCR отдельной графы точнее
+                    grid = parse_stamp_grid(doc, i, [] if source == "OCR" else runs, page["width_pt"], page["height_pt"])
+                except ocr.OcrUnavailable as e:
+                    grid = None
+                    res.errors.append(f"лист {page['page_no']}: {e}")
+                if grid:
+                    st = grid
+                else:
+                    st.note = ("Основная надпись не найдена (титульный лист, обложка или нестандартная рамка) — "
+                               "поля можно ввести вручную")
             with con:
                 con.execute("DELETE FROM text_item WHERE page_id=?", (pid,))
                 con.executemany(
@@ -86,11 +103,11 @@ def extract_pdf(obj: ProjectObject, file_id: int, cancelled: Callable[[], bool] 
                     "SELECT name, value, rects, confidence FROM stamp_field WHERE page_id=? AND edited=1", (pid,))}
                 con.execute("DELETE FROM stamp WHERE page_id=?", (pid,))
                 con.execute("INSERT INTO stamp(page_id, recognized, source, note, confirmed, version) VALUES (?,?,?,?,?,?)",
-                            (pid, int(st.recognized), source, st.note, old["confirmed"] if old else 0, EXTRACT_VERSION))
+                            (pid, int(st.recognized), "OCR" if source == "OCR" or st.source == "OCR" else "слой", st.note, old["confirmed"] if old else 0, EXTRACT_VERSION))
                 for fld in st.fields.values():
                     if fld.name in edited:      # правку пользователя не перезаписываем (ТЗ 7.3)
                         continue
-                    conf = "низкая" if source == "OCR" else fld.confidence
+                    conf = "низкая" if source == "OCR" and st.source != "OCR" else fld.confidence
                     con.execute("INSERT INTO stamp_field(page_id, name, value, rects, confidence) VALUES (?,?,?,?,?)",
                                 (pid, fld.name, fld.value, json.dumps(fld.rects), conf))
                 for name, r in edited.items():

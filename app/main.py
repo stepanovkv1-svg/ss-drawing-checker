@@ -32,7 +32,10 @@ def selftest(pdf: str, out: str) -> int:
             pgs = obj.pages(pdf_file.id)
             st = obj.stamp(pgs[0]["id"])
             rep["stamp"] = {k: v["value"] for k, v in st["fields"].items()} if st else {}
-            rep["ocr_items"] = len(obj.text_items(pgs[-1]["id"])) if pgs else 0
+            rep["ocr_items"] = len(obj.text_items(pgs[2]["id"])) if len(pgs) > 2 else 0
+            rep["stamps"] = [{"recognized": bool(s["recognized"]), "source": s["source"], "note": s["note"],
+                              **{k: v["value"] for k, v in s["fields"].items()}}
+                             for s in (obj.stamp(p["id"]) for p in pgs) if s]
             obj.close()
             db = AppDb(Path(td) / "app.db")
             db.remember_object(folder, "Самопроверка")
