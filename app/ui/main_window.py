@@ -14,6 +14,7 @@ from ..data import AppDb, ObjectError, ProjectObject
 from ..documents.intake import add_files
 from .composition import CompositionPanel
 from .details import DetailsPanel
+from .results import ResultsPanel
 from .sheet_view import SheetView
 
 ACCEPT = {".pdf", ".xlsx", ".md", ".docx"}
@@ -125,10 +126,19 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(mid, "Файлы")
         self.tabs.addTab(self.composition, "Состав комплекта")
+        self.results = ResultsPanel()
+        self.tabs.addTab(self.results, "Замечания")
+        self.composition.b_check.setEnabled(True)
+        self.composition.b_check.setToolTip("Запустить базовые проверки БП-01…БП-10")
+        self.composition.b_check.clicked.connect(self.run_checks)
+        self.results.open_place.connect(self.show_place)
+        self.results.pick_rect.connect(self.pick_place_rect)
+        self._pick_place = None
         self.tabs.currentChanged.connect(lambda i: i == 1 and self.composition.refresh())
 
         # ---- правая колонка: лист и сведения о нём
         self.sheet = SheetView()
+        self.sheet.rect_picked.connect(self.on_rect_picked)
         self.details = DetailsPanel()
         right = QSplitter(Qt.Vertical)
         right.addWidget(self.sheet)
@@ -204,6 +214,7 @@ class MainWindow(QMainWindow):
         self.details.clear()
         self.refresh_files()
         self.composition.set_object(obj)
+        self.results.set_object(obj)
 
     def set_object_enabled(self, on: bool):
         for w in (self.only_local, self.tree, self.b_remove):
@@ -266,6 +277,37 @@ class MainWindow(QMainWindow):
         status = next((p["extract_status"] for p in self.obj.pages(file_id) if p["id"] == page_id), None)
         self.sheet.show_page(str(self.obj.file_path(f)), page_no, f"{f.name} — лист {page_no}")
         self.details.show_page(self.obj, page_id, status)
+
+    def run_checks(self):
+        self.tabs.setCurrentWidget(self.results)
+        self.results.start()
+
+    def show_place(self, file_id: int, page_no: int, page_id: int, rect):
+        self.show_page(file_id, page_no, page_id)
+        self.sheet.set_rects([rect] if rect else [])
+
+    def pick_place_rect(self, place_id: int):
+        self._pick_place = place_id
+        self.sheet.start_pick()
+        self.statusBar().showMessage("Обведите мышью место на листе справа — скриншот переснимется", 8000)
+
+    def on_rect_picked(self, rect):
+        if self._pick_place is None or not self.obj:
+            return
+        from ..documents.pdf_engine import engine
+        from ..findings.shots import make_shot
+        from ..findings.store import set_place_rect
+        r = self.obj.con.execute("SELECT pg.file_id, pg.page_no FROM place p JOIN page pg ON pg.id=p.page_id "
+                                 "WHERE p.id=?", (self._pick_place,)).fetchone()
+        f = next(x for x in self.obj.files() if x.id == r["file_id"])
+        doc = engine().open(str(self.obj.file_path(f)))
+        try:
+            shot = make_shot(doc, r["page_no"] - 1, rect)
+        finally:
+            doc.close()
+        set_place_rect(self.obj.con, self._pick_place, rect, shot)
+        self._pick_place = None
+        self.results.on_select()
 
     def add_files_dialog(self):
         if not self.obj:

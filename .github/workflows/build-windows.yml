@@ -78,6 +78,10 @@ jobs:
           if ($r.stamps[3]."лист" -ne "4") { throw "Штамп формы 6 (последующий лист) не прочитан" }
           if ($r.stamps[4]."шифр" -ne "НСС-02-РД-ОБЩ") { throw "Штамп-картинка (OCR граф) не прочитан" }
           if ($r.classes[0].section -ne "СС") { throw "Классификация листа не выполнена (словарь не найден?)" }
+          if ($r.checks.status -ne "готово") { throw "Базовые проверки не завершились" }
+          if ($r.checks.stages."БП-03" -eq "ошибка" -or $r.checks.stages."БП-10" -eq "ошибка") { throw "Этап проверки упал" }
+          if ($r.checks.rules -notcontains "БП-03") { throw "Заложенный дефект нумерации не найден" }
+          if ($r.checks.shots -lt 1) { throw "Скриншоты мест не сделаны" }
           "Размер сборки, МБ: " + [math]::Round((Get-ChildItem dist\SSDrawingChecker -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - uses: actions/upload-artifact@v4

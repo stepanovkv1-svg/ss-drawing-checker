@@ -62,4 +62,31 @@ def test_main_window_flow(tmp_path, sample_pdf, sample_xlsx, monkeypatch):
     w.sheet.find.setText("ККС-49")
     w.sheet.do_find()
     assert w.sheet.found.text() == "найдено: 1"
+    # «Замечания»: проверка в фоне, этапы, карточка, место на листе, рамка вручную
+    w.composition.b_check.click()
+    assert w.tabs.currentWidget() is w.results
+    res = w.results
+    for _ in range(6000):
+        QCoreApplication.processEvents()
+        if res.thread is None:
+            break
+        res.thread.wait(10)
+    assert res.thread is None
+    assert res.stages.rowCount() == 10
+    assert res.table.rowCount() >= 3
+    rules = {res.table.item(r, 3).text() for r in range(res.table.rowCount())}
+    assert {"БП-03", "БП-07"} <= rules
+    row = next(r for r in range(res.table.rowCount()) if res.table.item(r, 3).text() == "БП-03")
+    res.table.selectRow(row)
+    assert res.places.count() >= 1 and not res.places.item(0).icon().isNull()     # скриншот места
+    res.places.setCurrentRow(0)
+    res.ask_frame()
+    assert w.sheet.picking and w.sheet.rects
+    w.sheet.picking = False
+    w.on_rect_picked((100.0, 100.0, 200.0, 150.0))
+    pid = res.places.item(0).data(Qt.UserRole)["id"]
+    assert w.obj.con.execute("SELECT method FROM place WHERE id=?", (pid,)).fetchone()[0] == "вручную"
+    res.decide("принято")
+    fid = res.fid
+    assert w.obj.con.execute("SELECT decision FROM finding WHERE id=?", (fid,)).fetchone()[0] == "принято"
     w.close()

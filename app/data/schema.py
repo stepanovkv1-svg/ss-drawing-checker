@@ -118,6 +118,55 @@ OBJECT_MIGRATIONS: dict[int, str] = {
         decided_at TEXT NOT NULL
     );
     """,
+    4: """
+    CREATE TABLE check_run (
+        id INTEGER PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,              -- идёт | готово | остановлено | ошибка
+        versions TEXT NOT NULL             -- JSON: программа, словари, правила
+    );
+    CREATE TABLE check_stage (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER NOT NULL REFERENCES check_run(id) ON DELETE CASCADE,
+        code TEXT NOT NULL,                -- БП-01 …
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,              -- выполнено | частично | пропущено | ручная проверка | ошибка
+        message TEXT NOT NULL DEFAULT '',
+        findings INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE finding (
+        id INTEGER PRIMARY KEY,
+        fingerprint TEXT NOT NULL UNIQUE,  -- правило + причина: повторная проверка узнаёт то же замечание
+        rule TEXT NOT NULL,                -- БП-02 … / инструкция
+        grp INTEGER NOT NULL,              -- 1 Оформление, 2 Техническая часть, 3 Расстановка оборудования
+        cls TEXT NOT NULL,                 -- подтверждённая ошибка | возможная ошибка | требуется уточнение
+        severity TEXT NOT NULL DEFAULT 'Не задана',
+        text TEXT NOT NULL,
+        basis TEXT NOT NULL,               -- основание: правило / инструкция
+        proof TEXT NOT NULL,               -- доказательство: значения из извлечения
+        decision TEXT NOT NULL DEFAULT 'не рассмотрено',   -- не рассмотрено | принято | отклонено
+        review TEXT NOT NULL DEFAULT '',   -- '' | требуется пересмотр (внутреннее состояние)
+        edited INTEGER NOT NULL DEFAULT 0,
+        run_id INTEGER REFERENCES check_run(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE place (
+        id INTEGER PRIMARY KEY,
+        finding_id INTEGER NOT NULL REFERENCES finding(id) ON DELETE CASCADE,
+        page_id INTEGER REFERENCES page(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        page_no INTEGER,
+        sheet TEXT NOT NULL DEFAULT '',     -- номер листа по штампу
+        x0 REAL, y0 REAL, x1 REAL, y1 REAL, -- пункты PDF; NULL — весь лист или комплект
+        method TEXT NOT NULL,               -- слой | OCR | штамп | зона штампа | вручную | весь лист | XLSX
+        cell TEXT NOT NULL DEFAULT '',      -- адрес ячейки XLSX
+        shot BLOB,
+        ord INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX place_finding ON place(finding_id);
+    """,
 }
 
 APP_MIGRATIONS: dict[int, str] = {
