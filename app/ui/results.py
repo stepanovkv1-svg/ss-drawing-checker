@@ -123,6 +123,10 @@ class ResultsPanel(QWidget):
         self.b_html.setToolTip("Реестр по утверждённому шаблону; отклонённые замечания не выгружаются")
         self.b_html.clicked.connect(self.export_html)
         top.addWidget(self.b_html)
+        self.b_xlsx = QPushButton("Экспорт Excel…")
+        self.b_xlsx.setToolTip("4 листа по согласованному образцу: замечания, места, покрытие, состав комплекта")
+        self.b_xlsx.clicked.connect(self.export_xlsx)
+        top.addWidget(self.b_xlsx)
         filt = QHBoxLayout()
         for w in (self.f_cls, self.f_grp, self.f_dec):
             filt.addWidget(w)
@@ -206,6 +210,20 @@ class ResultsPanel(QWidget):
             QMessageBox.warning(self, "Проверка", f"Проверка прервана ошибкой: {result}")
         self.refresh()
         self.changed.emit()
+
+    def export_xlsx(self):
+        if not self.obj:
+            return
+        from ..reports import excel
+        try:
+            out = excel.export(self.obj)
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(self, "Экспорт", f"Excel не выгружен: {e}")
+            return
+        QMessageBox.information(self, "Экспорт", f"Excel сохранён:\n{out}")
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(out.parent)))
 
     def export_html(self):
         if not self.obj:

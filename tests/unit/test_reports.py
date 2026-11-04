@@ -64,3 +64,27 @@ def test_template_checksum_guard(tmp_path, monkeypatch):
 def test_template_matches_recorded_checksum():
     d = paths.bundle_dir() / "resources" / "templates"
     assert hashlib.sha256((d / "template.html").read_bytes()).hexdigest() == (d / "template.sha256").read_text().strip()
+
+
+def test_excel_structure_matches_approved_sample(tmp_path, sample_pdf):
+    """Структура совпадает с образцом v2 (04.11): 4 листа, столбцы, скриншоты на «Замечаниях» и «Местах»."""
+    from openpyxl import load_workbook
+
+    from app.documents.intake import add_files
+    from app.pipeline.run import run_checks
+    from app.reports import excel
+
+    o = ProjectObject.create(tmp_path / "о", "Аэропорт")
+    add_files(o, [sample_pdf])
+    run_checks(o)
+    wb = load_workbook(excel.export(o, tmp_path / "r"))
+    assert wb.sheetnames == excel.SHEETS
+    assert [c.value for c in wb["Замечания"][1]] == excel.FINDING_COLS
+    assert [c.value for c in wb["Места"][1]] == excel.PLACE_COLS
+    assert [c.value for c in wb["Состав комплекта"][1]] == excel.COMP_COLS
+    assert [c.value for c in wb["Покрытие проверки"][9]] == excel.STAGE_COLS
+    n_f, n_p = wb["Замечания"].max_row - 1, wb["Места"].max_row - 1
+    assert n_f == len(store.findings(o.con)) and n_f >= 2
+    assert wb["Замечания"]["A2"].value == "1.1" and wb["Места"]["G2"].value is not None   # координаты мест
+    assert len(wb["Замечания"]._images) >= 1 and len(wb["Места"]._images) >= 1
+    assert wb["Состав комплекта"].max_row == 6
