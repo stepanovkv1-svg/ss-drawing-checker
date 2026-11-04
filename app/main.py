@@ -36,6 +36,9 @@ def selftest(pdf: str, out: str) -> int:
             rep["stamps"] = [{"recognized": bool(s["recognized"]), "source": s["source"], "note": s["note"],
                               **{k: v["value"] for k, v in s["fields"].items()}}
                              for s in (obj.stamp(p["id"]) for p in pgs) if s]
+            rep["classes"] = [{"level": c.level, "mark": ",".join(c.mark.value), "section": ",".join(c.section.value),
+                               "types": ",".join(c.doc_types.value), "version": c.dict_version}
+                              for c in (obj.classification(p["id"]) for p in pgs) if c]
             obj.close()
             db = AppDb(Path(td) / "app.db")
             db.remember_object(folder, "Самопроверка")

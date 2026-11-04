@@ -6,11 +6,13 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
                                QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar,
-                               QPushButton, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+                               QPushButton, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                               QWidget)
 
 from .. import APP_NAME, VERSION, paths
 from ..data import AppDb, ObjectError, ProjectObject
 from ..documents.intake import add_files
+from .composition import CompositionPanel
 from .details import DetailsPanel
 from .sheet_view import SheetView
 
@@ -118,6 +120,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.b_stop)
         ml.addLayout(row)
         ml.addWidget(self.summary)
+        self.composition = CompositionPanel()
+        self.composition.open_page.connect(self.show_page)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(mid, "Файлы")
+        self.tabs.addTab(self.composition, "Состав комплекта")
+        self.tabs.currentChanged.connect(lambda i: i == 1 and self.composition.refresh())
 
         # ---- правая колонка: лист и сведения о нём
         self.sheet = SheetView()
@@ -129,7 +137,7 @@ class MainWindow(QMainWindow):
 
         split = QSplitter()
         split.addWidget(left)
-        split.addWidget(mid)
+        split.addWidget(self.tabs)
         split.addWidget(right)
         split.setSizes([230, 520, 750])
         self.setCentralWidget(split)
@@ -195,6 +203,7 @@ class MainWindow(QMainWindow):
         self.sheet.clear()
         self.details.clear()
         self.refresh_files()
+        self.composition.set_object(obj)
 
     def set_object_enabled(self, on: bool):
         for w in (self.only_local, self.tree, self.b_remove):
@@ -250,7 +259,11 @@ class MainWindow(QMainWindow):
         if data[0] != "page":
             return
         _, file_id, page_no, page_id, status = data
+        self.show_page(file_id, page_no, page_id)
+
+    def show_page(self, file_id: int, page_no: int, page_id: int):
         f = next(x for x in self.obj.files() if x.id == file_id)
+        status = next((p["extract_status"] for p in self.obj.pages(file_id) if p["id"] == page_id), None)
         self.sheet.show_page(str(self.obj.file_path(f)), page_no, f"{f.name} — лист {page_no}")
         self.details.show_page(self.obj, page_id, status)
 
@@ -290,6 +303,7 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.b_stop.setVisible(False)
         self.refresh_files()
+        self.composition.refresh()
         problems = [f"{r.name}: {r.message}" for r in results if r.status != "прочитан"]
         if problems:
             QMessageBox.information(self, "Не все файлы прочитаны", "\n".join(problems))
@@ -308,6 +322,7 @@ class MainWindow(QMainWindow):
             self.details.clear()
             self.obj.remove_file(f.id)
             self.refresh_files()
+            self.composition.refresh()
 
     def closeEvent(self, e):
         if self.thread:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import sqlite3
 from dataclasses import dataclass
@@ -204,6 +205,65 @@ class ProjectObject:
 
     def xlsx_rows(self, table_id: int) -> list[sqlite3.Row]:
         return self.con.execute("SELECT * FROM xlsx_row WHERE table_id=? ORDER BY row_no", (table_id,)).fetchall()
+
+    # ---------------------------------------------------------------- классификация (шаг 3)
+    def classification(self, page_id: int):
+        from ..documents.classify import Classification
+        r = self.con.execute("SELECT * FROM classification WHERE page_id=?", (page_id,)).fetchone()
+        return Classification.from_json(json.loads(r["data"])) if r else None
+
+    def save_classification(self, page_id: int, cls, key: str) -> None:
+        with self.con:
+            self.con.execute(
+                "INSERT OR REPLACE INTO classification(page_id, data, level, conflict, source, dict_version, decision_key)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (page_id, json.dumps(cls.to_json(), ensure_ascii=False), cls.level, cls.conflict, cls.source,
+                 cls.dict_version, key))
+
+    def decision(self, key: str) -> dict | None:
+        r = self.con.execute("SELECT data FROM class_decision WHERE key=?", (key,)).fetchone()
+        return json.loads(r[0]) if r else None
+
+    def decide_classification(self, page_id: int, changes: dict[str, list[str]] | None = None) -> None:
+        """Решение пользователя: подтвердить как есть или задать значения (марка, раздел, подсистемы, типы).
+        Запоминается по ключу листа и применяется при повторной классификации (ФТ-13)."""
+        from ..documents.classify import SURE
+        r = self.con.execute("SELECT data, decision_key FROM classification WHERE page_id=?", (page_id,)).fetchone()
+        if not r:
+            return
+        cls = self.classification(page_id)
+        old = cls.to_json()
+        for name in ("mark", "section", "subsystems", "doc_types"):
+            ch = getattr(cls, name)
+            if changes and name in changes:
+                if ch.value != changes[name]:
+                    ch.evidence = ["задано пользователем"]
+                ch.value = list(changes[name])
+            ch.confidence = SURE
+            ch.contradictions = []
+        cls.source = "пользователь"
+        cls.conflict = ""
+        decided = {k: getattr(cls, k).value for k in ("mark", "section", "subsystems", "doc_types")}
+        with self.con:
+            self.con.execute("INSERT OR REPLACE INTO class_decision(key, data, decided_at) VALUES (?,?,?)",
+                             (r["decision_key"], json.dumps(decided, ensure_ascii=False), schema.now()))
+            self._history("classification", page_id, "решение",
+                          json.dumps({k: old[k]["value"] for k in decided}, ensure_ascii=False),
+                          json.dumps(decided, ensure_ascii=False))
+        self.save_classification(page_id, cls, r["decision_key"])
+
+    def confirm_stamp(self, page_id: int) -> None:
+        with self.con:
+            self.con.execute("UPDATE stamp SET confirmed=1 WHERE page_id=?", (page_id,))
+            self._history("stamp", page_id, "confirmed", "0", "1")
+
+    def confirm_xlsx_table(self, table_id: int, schema: dict | None = None) -> None:
+        with self.con:
+            if schema is not None:
+                self.con.execute("UPDATE xlsx_table SET schema=? WHERE id=?",
+                                 (json.dumps(schema, ensure_ascii=False), table_id))
+            self.con.execute("UPDATE xlsx_table SET confirmed=1 WHERE id=?", (table_id,))
+            self._history("xlsx_table", table_id, "confirmed", "0", "1")
 
     def summary(self) -> dict:
         r = self.con.execute(
