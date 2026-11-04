@@ -39,6 +39,13 @@ def selftest(pdf: str, out: str) -> int:
             rep["classes"] = [{"level": c.level, "mark": ",".join(c.mark.value), "section": ",".join(c.section.value),
                                "types": ",".join(c.doc_types.value), "version": c.dict_version}
                               for c in (obj.classification(p["id"]) for p in pgs) if c]
+            from .findings.store import findings, places
+            from .pipeline.run import last_run, run_checks
+            run_checks(obj)
+            run, stages = last_run(obj.con)
+            rep["checks"] = {"status": run["status"], "stages": {s["code"]: s["status"] for s in stages},
+                             "rules": sorted({f["rule"] for f in findings(obj.con)}),
+                             "shots": sum(1 for f in findings(obj.con) for p in places(obj.con, f["id"]) if p["shot"])}
             obj.close()
             db = AppDb(Path(td) / "app.db")
             db.remember_object(folder, "Самопроверка")
