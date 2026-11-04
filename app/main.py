@@ -53,6 +53,14 @@ def selftest(pdf: str, out: str) -> int:
                              "rules": sorted({f["rule"] for f in findings(obj.con)}),
                              "instr": [s["status"] for s in stages if s["code"].startswith("ВО")],
                              "shots": sum(1 for f in findings(obj.con) for p in places(obj.con, f["id"]) if p["shot"])}
+            from .reports import html as html_report
+            html_out, _ = html_report.export(obj, Path(td) / "r")
+            page = html_out.read_text(encoding="utf-8")
+            from openpyxl import load_workbook
+            from .reports import excel as excel_report
+            xl = load_workbook(excel_report.export(obj, Path(td) / "r"))
+            rep["xlsx"] = {"sheets": xl.sheetnames, "images": sum(len(ws._images) for ws in xl)}
+            rep["html"] = {"size": len(page), "placeholders": page.count("@@"), "rules": page.count('"status":')}
             obj.close()
             db = AppDb(Path(td) / "app.db")
             db.remember_object(folder, "Самопроверка")
