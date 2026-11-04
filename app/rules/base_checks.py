@@ -171,7 +171,7 @@ def bp03(ctx: Context) -> StageResult:
                 f"Документ {key}: в наборе нет листов {_list(gaps)}. Проверьте нумерацию или загрузите недостающие листы.",
                 BASIS.format(code="БП-03", title="Нумерация листов"),
                 f"Найдены номера листов: {_list(nums, 30)}" + (f"; листов по штампу: {total}" if total else ""),
-                [_place(s, s.field_rect("лист"), "штамп") for s in (by_no[n][0] for n in nums[:1] + nums[-1:])]))
+                [_place(s, s.field_rect("лист"), "штамп") for s in (by_no[n][0] for n in sorted({nums[0], nums[-1]}))]))
     if skipped:
         res.status = "частично"
         res.message = f"Без надёжного номера листа: {skipped} лист(ов) — штамп не подтверждён."

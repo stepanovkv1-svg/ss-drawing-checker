@@ -94,6 +94,12 @@ def test_bp03_duplicate_gap_and_total():
     assert keys["пропуск"].cls == QUESTION and "2, 3" in keys["пропуск"].text
 
 
+def test_bp03_gap_single_sheet_one_place():
+    ctx = make_ctx([("А.pdf", stamp(**full(sheet="3", total="3")), [])])
+    gap = bc.bp03(ctx).drafts[0]
+    assert "1, 2" in gap.text and len(gap.places) == 1
+
+
 def test_bp03_duplicate_between_files_is_question():
     ctx = make_ctx([("А.pdf", stamp(**full(sheet="1", total="1")), []),
                     ("Б.pdf", stamp(**full(sheet="1", total="1")), [])])
