@@ -14,23 +14,26 @@ from ..pipeline import run_checks
 from ..pipeline.run import last_run
 
 CLASS_COLORS = {"подтверждённая ошибка": "#fde2e1", "возможная ошибка": "#fff3cd", "требуется уточнение": "#e7f1fb"}
-STAGE_COLORS = {"частично": "#fff3cd", "пропущено": "#eeeeee", "ошибка": "#fde2e1", "ручная проверка": "#e7f1fb"}
+STAGE_COLORS = {"частично": "#fff3cd", "пропущено": "#eeeeee", "ошибка": "#fde2e1", "ручная проверка": "#e7f1fb",
+                "конфликт": "#fde2e1"}
 
 
 class CheckWorker(QObject):
     progress = Signal(int, int, str)
     finished = Signal(object)
 
-    def __init__(self, obj):
+    def __init__(self, obj, instructions=None, decisions=None):
         super().__init__()
         self.obj, self._stop = obj, False
+        self.instructions, self.decisions = instructions or [], decisions or {}
 
     def stop(self):
         self._stop = True
 
     def run(self):
         try:
-            rid = run_checks(self.obj, progress=self.progress.emit, cancelled=lambda: self._stop)
+            rid = run_checks(self.obj, progress=self.progress.emit, cancelled=lambda: self._stop,
+                             instructions=self.instructions, conflict_decisions=self.decisions)
             self.finished.emit(rid)
         except Exception as e:  # noqa: BLE001 — показать ошибку в окне, а не уронить программу
             self.finished.emit(e)
@@ -48,7 +51,8 @@ class ResultsPanel(QWidget):
         self.fid: int | None = None
 
         self.b_run = QPushButton("Проверить")
-        self.b_run.clicked.connect(self.start)
+        self.b_run.clicked.connect(lambda: self.start())
+        self.instr_source = None                     # () -> (инструкции, решения по конфликтам)
         self.b_stop = QPushButton("Стоп")
         self.b_stop.setVisible(False)
         self.b_stop.clicked.connect(lambda: self.worker.stop())
@@ -166,14 +170,16 @@ class ResultsPanel(QWidget):
         self.fid = None
         self.refresh()
 
-    def start(self):
+    def start(self, instructions=None, decisions=None):
         if not self.obj or self.thread:
             return
+        if instructions is None and self.instr_source:
+            instructions, decisions = self.instr_source()
         self.b_run.setEnabled(False)
         self.b_stop.setVisible(True)
         self.progress.setVisible(True)
         self.thread = QThread()
-        self.worker = CheckWorker(self.obj)
+        self.worker = CheckWorker(self.obj, instructions, decisions)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.progress.connect(self.on_progress)
@@ -205,7 +211,7 @@ class ResultsPanel(QWidget):
         run, stages = last_run(self.obj.con)
         if run:
             self.run_info.setText(f"Последняя проверка: {run['started_at']} — {run['status']}. "
-                                  "Замечаний от классификации нет, кроме БП-09. Программа не повышает критичность сама.")
+                                  "Критичность задаётся только инструкцией; программа не повышает её сама.")
         for st in stages:
             r = self.stages.rowCount()
             self.stages.insertRow(r)

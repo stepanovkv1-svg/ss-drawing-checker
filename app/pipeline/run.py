@@ -12,16 +12,23 @@ from ..documents.classify import dictionary
 from ..documents.pdf_engine import PdfError, engine
 from ..findings.shots import make_shot
 from ..findings.store import apply_drafts
+from ..requirements.conflicts import blocked, find_conflicts
 from ..rules.base_checks import CHECKS
+from ..rules.ops import run_instructions
 from ..rules.context import Context
 
-RULES_VERSION = "БП 1.0"
+RULES_VERSION = "БП 1.0, ВО 1.0"
 
 
 def run_checks(obj, progress: Callable[[int, int, str], None] | None = None,
-               cancelled: Callable[[], bool] | None = None) -> int:
+               cancelled: Callable[[], bool] | None = None, instructions: list | None = None,
+               conflict_decisions: dict | None = None) -> int:
+    """instructions — включённые инструкции из библиотеки (их версии копируются в объект);
+    conflict_decisions — решения пользователя по конфликтам требований."""
     con = obj.con
-    versions = {"программа": VERSION, "словарь признаков": dictionary()["version"], "базовые проверки": RULES_VERSION}
+    instructions = instructions or []
+    versions = {"программа": VERSION, "словарь признаков": dictionary()["version"], "базовые проверки": RULES_VERSION,
+                "инструкции": {i.name: i.ver for i in instructions}}
     with con:
         run_id = con.execute("INSERT INTO check_run(started_at, status, versions) VALUES (?,?,?)",
                              (schema.now(), "идёт", json.dumps(versions, ensure_ascii=False))).lastrowid
@@ -35,7 +42,7 @@ def run_checks(obj, progress: Callable[[int, int, str], None] | None = None,
         return docs[sheet.file_id]
 
     drafts = []
-    total = len(CHECKS) + 1
+    total = len(CHECKS) + 1 + bool(instructions)
     status = "готово"
     try:
         for k, (code, title, fn) in enumerate(CHECKS, 1):
@@ -54,6 +61,24 @@ def run_checks(obj, progress: Callable[[int, int, str], None] | None = None,
             with con:
                 con.execute("INSERT INTO check_stage(run_id, code, title, status, message, findings) VALUES (?,?,?,?,?,?)",
                             (run_id, code, title, st, msg, len(found)))
+        if status == "готово" and instructions and not (cancelled and cancelled()):
+            if progress:
+                progress(len(CHECKS) + 1, total, "Требования инструкций")
+            conflicts = find_conflicts(instructions)
+            for code, title, res in run_instructions(ctx, instructions, blocked(conflicts, conflict_decisions or {})):
+                drafts += res.drafts
+                with con:
+                    con.execute("INSERT INTO check_stage(run_id, code, title, status, message, findings)"
+                                " VALUES (?,?,?,?,?,?)", (run_id, code, title, res.status, res.message, len(res.drafts)))
+            with con:
+                for i in instructions:
+                    snap = i.snapshot()
+                    con.execute("INSERT INTO applied_instruction(run_id, instruction_id, name, ver, scope, text,"
+                                " requirements) VALUES (?,?,?,?,?,?,?)",
+                                (run_id, i.id, i.name, i.ver, json.dumps(snap["scope"], ensure_ascii=False), i.text,
+                                 json.dumps(snap["requirements"], ensure_ascii=False)))
+        elif cancelled and cancelled():
+            status = "остановлено"
         if status == "готово":
             apply_drafts(con, run_id, drafts)
             if progress:

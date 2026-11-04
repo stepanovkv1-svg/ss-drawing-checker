@@ -73,8 +73,9 @@ def apply_drafts(con: sqlite3.Connection, run_id: int, drafts: list[Draft]) -> d
                 continue
             if not old:
                 cur = con.execute(
-                    "INSERT INTO finding(fingerprint, rule, grp, cls, text, basis, proof, run_id, created_at, updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?)", (fp, d.rule, d.grp, d.cls, d.text, d.basis, d.proof, run_id, now, now))
+                    "INSERT INTO finding(fingerprint, rule, grp, cls, severity, text, basis, proof, run_id, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (fp, d.rule, d.grp, d.cls, d.severity, d.text, d.basis, d.proof, run_id, now, now))
                 _insert_places(con, cur.lastrowid, d)
                 stats["new"] += 1
                 continue
@@ -84,8 +85,9 @@ def apply_drafts(con: sqlite3.Connection, run_id: int, drafts: list[Draft]) -> d
                 con.execute("UPDATE finding SET run_id=?, review='', proof=? WHERE id=?", (run_id, d.proof, fid))
                 stats["kept"] += 1
             else:
-                con.execute("UPDATE finding SET cls=?, text=?, basis=?, proof=?, run_id=?, review='', updated_at=? "
-                            "WHERE id=?", (d.cls, d.text, d.basis, d.proof, run_id, now, fid))
+                con.execute("UPDATE finding SET rule=?, grp=?, cls=?, severity=?, text=?, basis=?, proof=?, run_id=?, "
+                            "review='', updated_at=? WHERE id=?",
+                            (d.rule, d.grp, d.cls, d.severity, d.text, d.basis, d.proof, run_id, now, fid))
                 stats["updated"] += 1
             if not manual_places:       # места, поправленные пользователем, не перезаписываются
                 con.execute("DELETE FROM place WHERE finding_id=?", (fid,))

@@ -14,6 +14,7 @@ from ..data import AppDb, ObjectError, ProjectObject
 from ..documents.intake import add_files
 from .composition import CompositionPanel
 from .details import DetailsPanel
+from .instructions import InstructionsPanel
 from .results import ResultsPanel
 from .sheet_view import SheetView
 
@@ -128,8 +129,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.composition, "Состав комплекта")
         self.results = ResultsPanel()
         self.tabs.addTab(self.results, "Замечания")
+        self.instructions = InstructionsPanel(self.appdb.con)
+        self.tabs.addTab(self.instructions, "Инструкции")
+        self.results.instr_source = self.instructions.enabled_for_run
         self.composition.b_check.setEnabled(True)
-        self.composition.b_check.setToolTip("Запустить базовые проверки БП-01…БП-10")
+        self.composition.b_check.setToolTip("Базовые проверки БП-01…БП-10 и требования включённых инструкций")
         self.composition.b_check.clicked.connect(self.run_checks)
         self.results.open_place.connect(self.show_place)
         self.results.pick_rect.connect(self.pick_place_rect)

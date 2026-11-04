@@ -37,7 +37,9 @@ class Draft:
     basis: str
     proof: str
     places: list[PlaceDraft] = field(default_factory=list)
+    severity: str = "Не задана"       # только из инструкции (ФТ-23)
+    fp_rule: str = ""                 # основа отпечатка, если имя правила может меняться (имя инструкции)
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha1(f"{self.rule}|{self.key}".encode("utf-8")).hexdigest()
+        return hashlib.sha1(f"{self.fp_rule or self.rule}|{self.key}".encode("utf-8")).hexdigest()

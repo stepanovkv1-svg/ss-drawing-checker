@@ -167,6 +167,19 @@ OBJECT_MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX place_finding ON place(finding_id);
     """,
+    5: """
+    -- применённые версии инструкций копируются в объект: папка воспроизводит проверку (ТЗ 7.1, С6)
+    CREATE TABLE applied_instruction (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER NOT NULL REFERENCES check_run(id) ON DELETE CASCADE,
+        instruction_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        ver INTEGER NOT NULL,
+        scope TEXT NOT NULL,
+        text TEXT NOT NULL,
+        requirements TEXT NOT NULL
+    );
+    """,
 }
 
 APP_MIGRATIONS: dict[int, str] = {
@@ -174,6 +187,30 @@ APP_MIGRATIONS: dict[int, str] = {
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE recent_object (path TEXT PRIMARY KEY, name TEXT NOT NULL, last_opened TEXT NOT NULL);
     CREATE TABLE setting (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    """,
+    2: """
+    -- библиотека инструкций (ТЗ 7.2): версия = снимок текста и разобранных требований
+    CREATE TABLE instruction (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        scope TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE instruction_version (
+        id INTEGER PRIMARY KEY,
+        instruction_id INTEGER NOT NULL REFERENCES instruction(id) ON DELETE CASCADE,
+        ver INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        requirements TEXT NOT NULL,        -- JSON: список требований (операция, параметры, область, …)
+        source_file TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        UNIQUE(instruction_id, ver)
+    );
+    -- решение пользователя по конфликту требований — для пары версий (С3)
+    CREATE TABLE conflict_decision (key TEXT PRIMARY KEY, choice TEXT NOT NULL, decided_at TEXT NOT NULL);
     """,
 }
 
