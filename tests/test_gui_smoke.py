@@ -90,3 +90,59 @@ def test_main_window_flow(tmp_path, sample_pdf, sample_xlsx, monkeypatch):
     fid = res.fid
     assert w.obj.con.execute("SELECT decision FROM finding WHERE id=?", (fid,)).fetchone()[0] == "принято"
     w.close()
+
+
+def test_instructions_tab(tmp_path, sample_pdf, monkeypatch):
+    """Инструкция: загрузка MD, разбор, конструктор, версия; проверка выполняет требования и показывает покрытие."""
+    from PySide6.QtCore import QCoreApplication, Qt
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    from app.data import AppDb, ProjectObject
+    from app.documents.intake import add_files
+    from app.requirements import library as lib
+    from app.ui.instructions import RequirementDialog
+    from app.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    md = tmp_path / "Оформление.md"
+    md.write_text("# Оформление\n- Стадия в штампе — «П».\n- Высоту камер согласовать.\n"
+                  "- Не допускается надпись «ККС-49».\n", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(md), "")))
+    w = MainWindow(AppDb(tmp_path / "app.db"))
+    panel = w.instructions
+    panel.load_file()
+    assert panel.list.count() == 1 and panel.table.rowCount() == 3
+    assert panel.table.item(0, 2).text() == "утверждён" and panel.table.item(1, 2).text() == "не разобран"
+    # конструктор: второму пункту задаём операцию ВО-02 и утверждаем
+    dlg = RequirementDialog(panel, panel.reqs[1])
+    dlg.op.setCurrentIndex(dlg.op.findData("ВО-02"))
+    dlg.widgets["text"][1].setText("Высота")
+    dlg.status.setCurrentText("утверждён")
+    dlg.sev.setCurrentText("Существенно")
+    panel.reqs[1] = dlg.result_req()
+    panel.fill_table()
+    panel.save()
+    ins = lib.get(w.appdb.con, panel.iid)
+    assert ins.ver == 2 and ins.requirements[1].op == "ВО-02" and ins.requirements[1].severity == "Существенно"
+    assert panel.versions.count() == 2
+    # проверка с инструкцией
+    obj = ProjectObject.create(tmp_path / "о", "т")
+    add_files(obj, [sample_pdf])
+    w.set_object(obj)
+    w.run_checks()
+    res = w.results
+    for _ in range(6000):
+        QCoreApplication.processEvents()
+        if res.thread is None:
+            break
+        res.thread.wait(10)
+    codes = [res.stages.item(r, 0).text() for r in range(res.stages.rowCount())]
+    assert codes.count("ВО-01") == 1 and codes.count("ВО-02") == 2
+    rules = {res.table.item(r, 3).text() for r in range(res.table.rowCount())}
+    assert "ВО-02 · Оформление" in rules                       # «ККС-49» есть на листе 2
+    applied = obj.con.execute("SELECT name, ver FROM applied_instruction").fetchall()
+    assert [tuple(r) for r in applied] == [("Оформление", 2)]
+    # выключенная инструкция не применяется
+    panel.list.item(0).setCheckState(Qt.Unchecked)
+    assert lib.enabled(w.appdb.con) == []
+    w.close()

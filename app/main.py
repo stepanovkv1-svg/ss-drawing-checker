@@ -41,10 +41,17 @@ def selftest(pdf: str, out: str) -> int:
                               for c in (obj.classification(p["id"]) for p in pgs) if c]
             from .findings.store import findings, places
             from .pipeline.run import last_run, run_checks
-            run_checks(obj)
+            from .data import schema
+            from .requirements import library
+            acon = schema.migrate(Path(td) / "lib.db", schema.APP_MIGRATIONS)
+            library.create(acon, "Самопроверка", "- Стадия в штампе — «П».\n- Не допускается надпись «ККС-49».\n"
+                                                 "- Каждому символу на плане — строка в условных обозначениях.")
+            run_checks(obj, instructions=library.enabled(acon))
+            acon.close()
             run, stages = last_run(obj.con)
             rep["checks"] = {"status": run["status"], "stages": {s["code"]: s["status"] for s in stages},
                              "rules": sorted({f["rule"] for f in findings(obj.con)}),
+                             "instr": [s["status"] for s in stages if s["code"].startswith("ВО")],
                              "shots": sum(1 for f in findings(obj.con) for p in places(obj.con, f["id"]) if p["shot"])}
             obj.close()
             db = AppDb(Path(td) / "app.db")
